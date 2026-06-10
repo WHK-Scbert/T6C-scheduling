@@ -33,8 +33,6 @@ const PLANE_LIMIT_BLOCKS = [
 ];
 const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
 const IP_PRIORITY = ["K-YA", "K-DA", "TH-KRIT", "P-BOB", "S-NA", "P-NART", "K-PHOOM"];
-const SHEET_CSV_URL =
-  "https://docs.google.com/spreadsheets/d/1L1wkP4OvPQLxtVb8OEwMjHMik5WCsI7F4FGQCIDIGrY/export?format=csv";
 
 function todayYmd() {
   const date = new Date();
@@ -56,93 +54,6 @@ function ipPriority(ip: string) {
 function timestampMs(value: string) {
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (char === '"' && quoted && next === '"') {
-      field += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === "," && !quoted) {
-      row.push(field);
-      field = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && next === "\n") index += 1;
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else {
-      field += char;
-    }
-  }
-
-  if (field || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  return rows.filter((item) => item.some(Boolean));
-}
-
-function normalizeDate(value: string) {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!match) return trimmed;
-  const [, month, day, year] = match;
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-function latestResponsePerSp(rows: ResponseRow[]) {
-  const latest = new Map<string, ResponseRow>();
-
-  rows.forEach((row) => {
-    const key = `${row.date}|${row.sp}`;
-    const previous = latest.get(key);
-    if (!previous || timestampMs(row.timestamp) >= timestampMs(previous.timestamp)) {
-      latest.set(key, row);
-    }
-  });
-
-  return Array.from(latest.values()).sort((a, b) => {
-    const byDate = a.date.localeCompare(b.date);
-    if (byDate !== 0) return byDate;
-    return a.sp.localeCompare(b.sp);
-  });
-}
-
-function parseResponseRows(csv: string) {
-  const [headerRow = [], ...dataRows] = parseCsv(csv);
-  const headers = headerRow.map((header) => header.trim().toLowerCase());
-
-  const rows: ResponseRow[] = dataRows
-    .map((dataRow) => {
-      const value = (name: string) => dataRow[headers.indexOf(name)]?.trim() ?? "";
-      return {
-        timestamp: value("timestamp"),
-        date: normalizeDate(value("date")),
-        sp: value("sp"),
-        ip: value("ip"),
-        period: value("period"),
-        reservePeriod: value("period สำรอง"),
-        area: value("area"),
-        reserveArea: value("area สำรอง"),
-        flight: value("flight"),
-      };
-    })
-    .filter((row) => row.date && row.sp && row.ip && row.period);
-
-  return latestResponsePerSp(rows);
 }
 
 function resolveDailyFlights(rows: ResponseRow[], planeCount: number) {
@@ -205,13 +116,9 @@ export default function DailySchedulePage() {
   async function loadResponses() {
     setStatus("Loading responses...");
     try {
-      const response = await fetch(SHEET_CSV_URL, { cache: "no-store" });
-      if (!response.ok) throw new Error(`Unable to fetch response sheet: ${response.status}`);
-      const rows = parseResponseRows(await response.text());
-      const payload: ResponsesPayload = {
-        updatedAt: new Date().toISOString(),
-        rows,
-      };
+      const response = await fetch("/api/responses", { cache: "no-store" });
+      const payload = (await response.json()) as ResponsesPayload;
+      if (!response.ok) throw new Error(payload.error || "Unable to load responses");
 
       setRows(payload.rows);
       setUpdatedAt(payload.updatedAt);
