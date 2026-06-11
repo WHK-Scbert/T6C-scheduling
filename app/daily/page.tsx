@@ -30,7 +30,9 @@ type ResolvedFlight = ResponseRow & {
 };
 
 const PERIODS = ["1 Blue", "1 Black", "2 Blue", "2 Black", "3 Blue", "3 Black"];
-const AREAS = ["Cn", "Cs", "Bn", "Bs", "W", "En", "Es"];
+const AREAS = ["Cn", "Cs", "Bn", "Bs", "En", "Es", "W"];
+const SIM_AREA = "SIM";
+const SIM_LIMIT_PER_PERIOD = 2;
 const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
 const IP_PRIORITY = [
   "N-WAT",
@@ -118,11 +120,13 @@ function seededPeriodOrder(row: ResponseRow) {
 
 function areaCandidates(row: ResponseRow, period: string) {
   const preferredAreas = [row.area, row.reserveArea].map((area) => area.trim()).filter(Boolean);
-  const randomAreas = seededOrder(AREAS, `${row.timestamp}|${row.sp}|${row.ip}|${period}`).filter(
+  if (preferredAreas.some((area) => area.toUpperCase() === SIM_AREA)) return [SIM_AREA];
+
+  const fallbackAreas = AREAS.filter(
     (area) => !preferredAreas.includes(area),
   );
 
-  return Array.from(new Set([...preferredAreas, ...randomAreas]));
+  return Array.from(new Set([...preferredAreas, ...fallbackAreas]));
 }
 
 function periodCandidates(row: ResponseRow, unavailablePeriods: Set<string>) {
@@ -149,10 +153,12 @@ function periodTone(period: string) {
 function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<string, number>) {
   const usedByPeriod = new Map<string, number>();
   const usedAreaByPeriod = new Map<string, Set<string>>();
+  const usedSimByPeriod = new Map<string, number>();
 
   function canUse(period: string, area: string) {
     if (!period || !PERIODS.includes(period)) return false;
     if ((usedByPeriod.get(period) ?? 0) >= (aircraftCapacity[period] ?? 0)) return false;
+    if (area.toUpperCase() === SIM_AREA) return (usedSimByPeriod.get(period) ?? 0) < SIM_LIMIT_PER_PERIOD;
     if (area && usedAreaByPeriod.get(period)?.has(area)) return false;
     return true;
   }
@@ -160,6 +166,10 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
   function reserve(period: string, area: string) {
     usedByPeriod.set(period, (usedByPeriod.get(period) ?? 0) + 1);
     if (area) {
+      if (area.toUpperCase() === SIM_AREA) {
+        usedSimByPeriod.set(period, (usedSimByPeriod.get(period) ?? 0) + 1);
+        return;
+      }
       if (!usedAreaByPeriod.has(period)) usedAreaByPeriod.set(period, new Set());
       usedAreaByPeriod.get(period)?.add(area);
     }
