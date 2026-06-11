@@ -241,9 +241,6 @@ export default function DailySchedulePage() {
           <h1 id="daily-title">Daily Flight Schedule</h1>
         </div>
         <div className="topActions">
-          <a className="navButton" href="/">
-            Weekly scheduler
-          </a>
           <button className="primaryButton compactButton" type="button" onClick={loadResponses}>
             Refresh
           </button>
