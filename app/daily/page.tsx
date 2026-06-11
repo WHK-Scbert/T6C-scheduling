@@ -57,6 +57,13 @@ function todayYmd() {
   return `${year}-${month}-${day}`;
 }
 
+function availableScheduleDates(rows: ResponseRow[]) {
+  const today = todayYmd();
+  return Array.from(new Set(rows.map((row) => row.date)))
+    .filter((date) => date >= today)
+    .sort();
+}
+
 function normalizeIpName(ip: string) {
   const normalized = ip.trim().toUpperCase();
   return IP_PRIORITY_ALIASES[normalized] ?? normalized;
@@ -184,9 +191,9 @@ export default function DailySchedulePage() {
       setUpdatedAt(payload.updatedAt);
       setStatus(`Loaded ${payload.rows.length} response${payload.rows.length === 1 ? "" : "s"}`);
 
-      const dates = Array.from(new Set(payload.rows.map((row) => row.date))).sort();
+      const dates = availableScheduleDates(payload.rows);
       if (dates.length > 0 && !dates.includes(selectedDate)) {
-        setSelectedDate(dates[dates.length - 1]);
+        setSelectedDate(dates[0]);
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to load responses");
@@ -198,7 +205,7 @@ export default function DailySchedulePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dates = useMemo(() => Array.from(new Set(rows.map((row) => row.date))).sort(), [rows]);
+  const dates = useMemo(() => availableScheduleDates(rows), [rows]);
   const dailyRows = useMemo(() => rows.filter((row) => row.date === selectedDate), [rows, selectedDate]);
   const resolvedRows = useMemo(
     () => resolveDailyFlights(dailyRows, aircraftCapacity),
