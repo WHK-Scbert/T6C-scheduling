@@ -30,6 +30,7 @@ type ResolvedFlight = ResponseRow & {
 };
 
 const PERIODS = ["1 Blue", "1 Black", "2 Blue", "2 Black", "3 Blue", "3 Black"];
+const AREAS = ["Cn", "Cs", "Bn", "Bs", "W", "En", "Es"];
 const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
 const IP_PRIORITY = [
   "N-WAT",
@@ -98,17 +99,45 @@ function periodUnavailableSet(value: string) {
   return new Set(splitPeriodList(value));
 }
 
-function seededPeriodOrder(row: ResponseRow) {
-  let seed = `${row.timestamp}|${row.sp}|${row.ip}`.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
-  const periods = [...PERIODS];
+function seededOrder<T>(items: T[], seedSource: string) {
+  let seed = seedSource.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+  const ordered = [...items];
 
-  for (let index = periods.length - 1; index > 0; index -= 1) {
+  for (let index = ordered.length - 1; index > 0; index -= 1) {
     seed = (seed * 9301 + 49297) % 233280;
     const swapIndex = seed % (index + 1);
-    [periods[index], periods[swapIndex]] = [periods[swapIndex], periods[index]];
+    [ordered[index], ordered[swapIndex]] = [ordered[swapIndex], ordered[index]];
   }
 
-  return periods;
+  return ordered;
+}
+
+function seededPeriodOrder(row: ResponseRow) {
+  return seededOrder(PERIODS, `${row.timestamp}|${row.sp}|${row.ip}`);
+}
+
+function areaCandidates(row: ResponseRow, period: string) {
+  const preferredAreas = [row.area, row.reserveArea].map((area) => area.trim()).filter(Boolean);
+  const randomAreas = seededOrder(AREAS, `${row.timestamp}|${row.sp}|${row.ip}|${period}`).filter(
+    (area) => !preferredAreas.includes(area),
+  );
+
+  return Array.from(new Set([...preferredAreas, ...randomAreas]));
+}
+
+function periodCandidates(row: ResponseRow, unavailablePeriods: Set<string>) {
+  const preferredPeriods = [row.period, row.reservePeriod].filter((period) => PERIODS.includes(period));
+  const randomPeriods = seededPeriodOrder(row).filter(
+    (period) => !preferredPeriods.includes(period) && !unavailablePeriods.has(period),
+  );
+
+  return [
+    ...preferredPeriods.map((period, index) => ({
+      period,
+      fallback: index === 0 ? ("primary" as const) : ("reserve" as const),
+    })),
+    ...randomPeriods.map((period) => ({ period, fallback: "any" as const })),
+  ];
 }
 
 function periodTone(period: string) {
@@ -149,15 +178,9 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
 
   return prioritizedRows.map((row): ResolvedFlight => {
     const unavailablePeriods = periodUnavailableSet(row.unavailablePeriods);
-    const candidates = [
-      { period: row.period, area: row.area, fallback: "primary" as const },
-      { period: row.reservePeriod, area: row.reserveArea, fallback: "reserve" as const },
-      ...seededPeriodOrder(row).map((period) => ({
-        period,
-        area: row.area || row.reserveArea,
-        fallback: "any" as const,
-      })).filter((candidate) => !unavailablePeriods.has(candidate.period)),
-    ];
+    const candidates = periodCandidates(row, unavailablePeriods).flatMap(({ period, fallback }) =>
+      areaCandidates(row, period).map((area) => ({ period, area, fallback })),
+    );
     const selected = candidates.find((candidate) => canUse(candidate.period, candidate.area));
     if (!selected) {
       return { ...row, scheduledPeriod: "", scheduledArea: "", fallback: "none", status: "cannot" };
