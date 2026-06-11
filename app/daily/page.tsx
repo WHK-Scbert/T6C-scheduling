@@ -13,6 +13,7 @@ type ResponseRow = {
   reserveArea: string;
   flight: string;
   unavailablePeriods: string;
+  checkFlight: string;
 };
 
 type ResponsesPayload = {
@@ -64,6 +65,10 @@ function normalizeIpName(ip: string) {
 function ipPriority(ip: string) {
   const index = IP_PRIORITY.indexOf(normalizeIpName(ip));
   return index === -1 ? IP_PRIORITY.length : index;
+}
+
+function checkFlightPriority(value: string) {
+  return value.trim() === "ใช่" ? 0 : 1;
 }
 
 function timestampMs(value: string) {
@@ -128,6 +133,7 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
     .map((row, index) => ({ row, index }))
     .sort(
       (a, b) =>
+        checkFlightPriority(a.row.checkFlight) - checkFlightPriority(b.row.checkFlight) ||
         ipPriority(a.row.ip) - ipPriority(b.row.ip) ||
         timestampMs(a.row.timestamp) - timestampMs(b.row.timestamp) ||
         a.index - b.index,
@@ -362,6 +368,7 @@ export default function DailySchedulePage() {
                 <th>Reserve period</th>
                 <th>Reserve area</th>
                 <th>Unavailable</th>
+                <th>Check flight</th>
                 <th>Used</th>
                 <th>Flight</th>
                 <th>Timestamp</th>
@@ -370,7 +377,7 @@ export default function DailySchedulePage() {
             <tbody>
               {dailyRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10}>No responses for this date.</td>
+                  <td colSpan={11}>No responses for this date.</td>
                 </tr>
               ) : (
                 dailyRows.map((row, index) => (
@@ -382,6 +389,7 @@ export default function DailySchedulePage() {
                     <td>{row.reservePeriod}</td>
                     <td>{row.reserveArea}</td>
                     <td>{row.unavailablePeriods}</td>
+                    <td>{row.checkFlight}</td>
                     <td>{resolvedRows.find((resolved) => resolved.timestamp === row.timestamp && resolved.sp === row.sp)?.fallback ?? "not scheduled"}</td>
                     <td>{row.flight}</td>
                     <td>{row.timestamp}</td>
