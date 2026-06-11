@@ -157,19 +157,19 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
 
   function canUse(period: string, area: string) {
     if (!period || !PERIODS.includes(period)) return false;
-    if ((usedByPeriod.get(period) ?? 0) >= (aircraftCapacity[period] ?? 0)) return false;
     if (area.toUpperCase() === SIM_AREA) return (usedSimByPeriod.get(period) ?? 0) < SIM_LIMIT_PER_PERIOD;
+    if ((usedByPeriod.get(period) ?? 0) >= (aircraftCapacity[period] ?? 0)) return false;
     if (area && usedAreaByPeriod.get(period)?.has(area)) return false;
     return true;
   }
 
   function reserve(period: string, area: string) {
-    usedByPeriod.set(period, (usedByPeriod.get(period) ?? 0) + 1);
     if (area) {
       if (area.toUpperCase() === SIM_AREA) {
         usedSimByPeriod.set(period, (usedSimByPeriod.get(period) ?? 0) + 1);
         return;
       }
+      usedByPeriod.set(period, (usedByPeriod.get(period) ?? 0) + 1);
       if (!usedAreaByPeriod.has(period)) usedAreaByPeriod.set(period, new Set());
       usedAreaByPeriod.get(period)?.add(area);
     }
