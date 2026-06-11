@@ -32,7 +32,23 @@ const PLANE_LIMIT_BLOCKS = [
   { label: "2 Blue + 2 Black", periods: ["2 Blue", "2 Black"] },
 ];
 const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
-const IP_PRIORITY = ["K-YA", "K-DA", "TH-KRIT", "P-BOB", "S-NA", "P-NART", "K-PHOOM"];
+const IP_PRIORITY = [
+  "N-WAT",
+  "K-YA",
+  "K-DA",
+  "N-PAT",
+  "V-RUTH",
+  "P-POB",
+  "T-KRIT",
+  "S-PONG",
+  "S-NA",
+  "P-NART",
+  "K-PHOOM",
+];
+const IP_PRIORITY_ALIASES: Record<string, string> = {
+  "TH-KRIT": "T-KRIT",
+  "P-BOB": "P-POB",
+};
 
 function todayYmd() {
   const date = new Date();
@@ -46,8 +62,13 @@ function blockForPeriod(period: string) {
   return PLANE_LIMIT_BLOCKS.find((block) => block.periods.includes(period)) ?? null;
 }
 
+function normalizeIpName(ip: string) {
+  const normalized = ip.trim().toUpperCase();
+  return IP_PRIORITY_ALIASES[normalized] ?? normalized;
+}
+
 function ipPriority(ip: string) {
-  const index = IP_PRIORITY.indexOf(ip);
+  const index = IP_PRIORITY.indexOf(normalizeIpName(ip));
   return index === -1 ? IP_PRIORITY.length : index;
 }
 
