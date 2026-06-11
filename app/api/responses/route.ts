@@ -15,6 +15,7 @@ type ResponseRow = {
   area: string;
   reserveArea: string;
   flight: string;
+  unavailablePeriods: string;
 };
 
 function parseCsv(text: string) {
@@ -112,6 +113,7 @@ export async function GET() {
         area: value("area"),
         reserveArea: value("area สำรอง"),
         flight: value("flight"),
+        unavailablePeriods: value("period ที่ไม่ว่าง"),
       };
     })
     .filter((row) => row.date && row.sp && row.ip && row.period);

@@ -8,6 +8,9 @@
   --accent: #177245;
   --accent-strong: #0b5b34;
   --blue: #dcebf7;
+  --black-period: #eef0f2;
+  --warning-soft: #ffe4c7;
+  --warning-strong: #b85f00;
   --yellow: #fff4bf;
   --danger: #b42318;
   --shadow: 0 14px 40px rgba(20, 34, 28, 0.08);
@@ -329,7 +332,7 @@ code {
 
 .dailyControls {
   display: grid;
-  grid-template-columns: minmax(220px, 320px) minmax(160px, 220px) 1fr;
+  grid-template-columns: minmax(220px, 320px) 1fr;
   gap: 16px;
   align-items: end;
   margin-bottom: 16px;
@@ -357,21 +360,35 @@ code {
 
 .capacityStrip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
 
 .capacityBadge {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   box-shadow: var(--shadow);
   padding: 12px 14px;
+}
+
+.capacityBadge label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.capacityBadge select {
+  min-width: 72px;
+  min-height: 36px;
+  padding: 7px 9px;
 }
 
 .capacityBadge span {
@@ -442,8 +459,38 @@ td {
 }
 
 td.filled {
-  background: var(--blue);
   color: var(--ink);
+}
+
+td.bluePeriod {
+  background: var(--blue);
+}
+
+td.blackPeriod {
+  background: var(--black-period);
+}
+
+.alertNameCell {
+  background: var(--warning-soft);
+  color: var(--ink);
+}
+
+.cannotBlock,
+.holdBlock {
+  text-align: center;
+  vertical-align: middle;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.cannotBlock {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.holdBlock {
+  background: var(--yellow);
+  color: #725c00;
 }
 
 td.filled strong,

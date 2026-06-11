@@ -12,6 +12,7 @@ type ResponseRow = {
   area: string;
   reserveArea: string;
   flight: string;
+  unavailablePeriods: string;
 };
 
 type ResponsesPayload = {
@@ -23,14 +24,11 @@ type ResponsesPayload = {
 type ResolvedFlight = ResponseRow & {
   scheduledPeriod: string;
   scheduledArea: string;
-  fallback: "primary" | "reserve" | "any";
+  fallback: "primary" | "reserve" | "any" | "none";
+  status: "scheduled" | "cannot";
 };
 
-const PERIODS = ["1 Blue", "1 Black", "2 Blue", "2 Black", "3 Blue"];
-const PLANE_LIMIT_BLOCKS = [
-  { label: "1 Blue + 1 Black", periods: ["1 Blue", "1 Black"] },
-  { label: "2 Blue + 2 Black", periods: ["2 Blue", "2 Black"] },
-];
+const PERIODS = ["1 Blue", "1 Black", "2 Blue", "2 Black", "3 Blue", "3 Black"];
 const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
 const IP_PRIORITY = [
   "N-WAT",
@@ -58,10 +56,6 @@ function todayYmd() {
   return `${year}-${month}-${day}`;
 }
 
-function blockForPeriod(period: string) {
-  return PLANE_LIMIT_BLOCKS.find((block) => block.periods.includes(period)) ?? null;
-}
-
 function normalizeIpName(ip: string) {
   const normalized = ip.trim().toUpperCase();
   return IP_PRIORITY_ALIASES[normalized] ?? normalized;
@@ -77,23 +71,53 @@ function timestampMs(value: string) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function resolveDailyFlights(rows: ResponseRow[], planeCount: number) {
+function emptyAircraftCapacity() {
+  return Object.fromEntries(PERIODS.map((period) => [period, 4])) as Record<string, number>;
+}
+
+function splitPeriodList(value: string) {
+  return value
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function periodUnavailableSet(value: string) {
+  return new Set(splitPeriodList(value));
+}
+
+function seededPeriodOrder(row: ResponseRow) {
+  let seed = `${row.timestamp}|${row.sp}|${row.ip}`.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
+  const periods = [...PERIODS];
+
+  for (let index = periods.length - 1; index > 0; index -= 1) {
+    seed = (seed * 9301 + 49297) % 233280;
+    const swapIndex = seed % (index + 1);
+    [periods[index], periods[swapIndex]] = [periods[swapIndex], periods[index]];
+  }
+
+  return periods;
+}
+
+function periodTone(period: string) {
+  if (period.includes("Blue")) return "blue";
+  if (period.includes("Black")) return "black";
+  return "";
+}
+
+function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<string, number>) {
   const usedByPeriod = new Map<string, number>();
-  const usedByBlock = new Map<string, number>();
   const usedAreaByPeriod = new Map<string, Set<string>>();
 
   function canUse(period: string, area: string) {
     if (!period || !PERIODS.includes(period)) return false;
-    const block = blockForPeriod(period);
-    if (block && (usedByBlock.get(block.label) ?? 0) >= planeCount) return false;
+    if ((usedByPeriod.get(period) ?? 0) >= (aircraftCapacity[period] ?? 0)) return false;
     if (area && usedAreaByPeriod.get(period)?.has(area)) return false;
     return true;
   }
 
   function reserve(period: string, area: string) {
     usedByPeriod.set(period, (usedByPeriod.get(period) ?? 0) + 1);
-    const block = blockForPeriod(period);
-    if (block) usedByBlock.set(block.label, (usedByBlock.get(block.label) ?? 0) + 1);
     if (area) {
       if (!usedAreaByPeriod.has(period)) usedAreaByPeriod.set(period, new Set());
       usedAreaByPeriod.get(period)?.add(area);
@@ -110,20 +134,29 @@ function resolveDailyFlights(rows: ResponseRow[], planeCount: number) {
     )
     .map(({ row }) => row);
 
-  return prioritizedRows.flatMap((row): ResolvedFlight[] => {
+  return prioritizedRows.map((row): ResolvedFlight => {
+    const unavailablePeriods = periodUnavailableSet(row.unavailablePeriods);
     const candidates = [
       { period: row.period, area: row.area, fallback: "primary" as const },
       { period: row.reservePeriod, area: row.reserveArea, fallback: "reserve" as const },
-      ...PERIODS.map((period) => ({
+      ...seededPeriodOrder(row).map((period) => ({
         period,
         area: row.area || row.reserveArea,
         fallback: "any" as const,
-      })),
+      })).filter((candidate) => !unavailablePeriods.has(candidate.period)),
     ];
     const selected = candidates.find((candidate) => canUse(candidate.period, candidate.area));
-    if (!selected) return [];
+    if (!selected) {
+      return { ...row, scheduledPeriod: "", scheduledArea: "", fallback: "none", status: "cannot" };
+    }
     reserve(selected.period, selected.area);
-    return [{ ...row, scheduledPeriod: selected.period, scheduledArea: selected.area, fallback: selected.fallback }];
+    return {
+      ...row,
+      scheduledPeriod: selected.period,
+      scheduledArea: selected.area,
+      fallback: selected.fallback,
+      status: "scheduled",
+    };
   });
 }
 
@@ -132,7 +165,7 @@ export default function DailySchedulePage() {
   const [selectedDate, setSelectedDate] = useState(todayYmd());
   const [updatedAt, setUpdatedAt] = useState("");
   const [status, setStatus] = useState("Loading responses...");
-  const [planeCount, setPlaneCount] = useState(4);
+  const [aircraftCapacity, setAircraftCapacity] = useState(emptyAircraftCapacity);
 
   async function loadResponses() {
     setStatus("Loading responses...");
@@ -161,39 +194,44 @@ export default function DailySchedulePage() {
 
   const dates = useMemo(() => Array.from(new Set(rows.map((row) => row.date))).sort(), [rows]);
   const dailyRows = useMemo(() => rows.filter((row) => row.date === selectedDate), [rows, selectedDate]);
-  const resolvedRows = useMemo(() => resolveDailyFlights(dailyRows, planeCount), [dailyRows, planeCount]);
+  const resolvedRows = useMemo(
+    () => resolveDailyFlights(dailyRows, aircraftCapacity),
+    [dailyRows, aircraftCapacity],
+  );
   const dailyScheduleRows = useMemo(() => {
-    const responseSps = resolvedRows.map((row) => row.sp).filter(Boolean);
+    const responseSps = dailyRows.map((row) => row.sp).filter(Boolean);
     const allSps = Array.from(new Set([...SP_LIST, ...responseSps]));
 
     return allSps.map((sp) => {
       const spRows = resolvedRows.filter((row) => row.sp === sp);
-      const flightsByPeriod = new Map<string, string>();
-      spRows.forEach((row) => {
-        flightsByPeriod.set(row.scheduledPeriod, row.flight || "Flight");
-      });
+      const scheduledRows = spRows.filter((row) => row.status === "scheduled");
+      const flightsByPeriod = new Map<string, ResolvedFlight>();
+      scheduledRows.forEach((row) => flightsByPeriod.set(row.scheduledPeriod, row));
       const ips = Array.from(new Set(spRows.map((row) => row.ip).filter(Boolean)));
-      const areas = Array.from(new Set(spRows.map((row) => row.scheduledArea).filter(Boolean)));
+      const areas = Array.from(new Set(scheduledRows.map((row) => row.scheduledArea).filter(Boolean)));
+      const cannot = spRows.find((row) => row.status === "cannot");
 
       return {
         sp,
         ip: ips.join(", "),
         area: areas.join(", "),
+        cannot,
         flightsByPeriod,
-        scheduled: spRows.length > 0,
+        status: cannot ? "cannot" : spRows.length === 0 ? "hold" : "scheduled",
       };
     });
-  }, [resolvedRows]);
+  }, [dailyRows, resolvedRows]);
   const capacitySummary = useMemo(() => {
-    return PLANE_LIMIT_BLOCKS.map((block) => {
-      const used = resolvedRows.filter((row) => block.periods.includes(row.scheduledPeriod)).length;
+    return PERIODS.map((period) => {
+      const used = resolvedRows.filter((row) => row.scheduledPeriod === period).length;
       return {
-        ...block,
+        period,
         used,
-        over: used > planeCount,
+        available: aircraftCapacity[period] ?? 0,
+        over: used > (aircraftCapacity[period] ?? 0),
       };
     });
-  }, [resolvedRows, planeCount]);
+  }, [resolvedRows, aircraftCapacity]);
 
   return (
     <main className="shell">
@@ -224,16 +262,6 @@ export default function DailySchedulePage() {
             ))}
           </select>
         </label>
-        <label>
-          Number of planes
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={planeCount}
-            onChange={(event) => setPlaneCount(Math.max(1, Number(event.target.value) || 1))}
-          />
-        </label>
         <div className="statusBlock">
           <strong>{status}</strong>
           <span>{updatedAt ? `Updated ${new Date(updatedAt).toLocaleString()}` : "Waiting for sheet data"}</span>
@@ -241,11 +269,28 @@ export default function DailySchedulePage() {
       </section>
 
       <section className="capacityStrip" aria-label="Aircraft capacity summary">
-        {capacitySummary.map((block) => (
-          <div className={block.over ? "capacityBadge overCapacity" : "capacityBadge"} key={block.label}>
-            <strong>{block.label}</strong>
+        {capacitySummary.map((item) => (
+          <div className={item.over ? "capacityBadge overCapacity" : "capacityBadge"} key={item.period}>
+            <label>
+              <strong>{item.period}</strong>
+              <select
+                value={item.available}
+                onChange={(event) =>
+                  setAircraftCapacity((current) => ({
+                    ...current,
+                    [item.period]: Number(event.target.value),
+                  }))
+                }
+              >
+                {Array.from({ length: 11 }, (_, index) => index).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
             <span>
-              {block.used}/{planeCount} aircraft
+              {item.used}/{item.available}
             </span>
           </div>
         ))}
@@ -272,17 +317,30 @@ export default function DailySchedulePage() {
             </thead>
             <tbody>
               {dailyScheduleRows.map((row) => (
-                <tr key={row.sp}>
-                  <th>{row.sp}</th>
-                  <td>{row.ip || ""}</td>
-                  {PERIODS.map((period) => {
-                    const flight = row.flightsByPeriod.get(period);
-                    return (
-                      <td key={period} className={flight ? "filled" : ""}>
-                        {flight ? <strong>{flight}</strong> : null}
-                      </td>
-                    );
-                  })}
+                <tr className={row.status === "cannot" ? "cannotRow" : ""} key={row.sp}>
+                  <th className={row.status === "cannot" ? "alertNameCell" : ""}>{row.sp}</th>
+                  <td className={row.status === "cannot" ? "alertNameCell" : ""}>{row.ip || ""}</td>
+                  {row.status === "cannot" ? (
+                    <td className="cannotBlock" colSpan={PERIODS.length}>
+                      Cannot schedule
+                    </td>
+                  ) : row.status === "hold" ? (
+                    <td className="holdBlock" colSpan={PERIODS.length}>
+                      Hold
+                    </td>
+                  ) : (
+                    PERIODS.map((period) => {
+                      const flight = row.flightsByPeriod.get(period);
+                      return (
+                        <td
+                          key={period}
+                          className={flight ? `filled ${periodTone(period)}Period` : ""}
+                        >
+                          {flight ? <strong>{flight.flight || "Flight"}</strong> : null}
+                        </td>
+                      );
+                    })
+                  )}
                   <td>{row.area || ""}</td>
                 </tr>
               ))}
@@ -306,6 +364,7 @@ export default function DailySchedulePage() {
                 <th>Area</th>
                 <th>Reserve period</th>
                 <th>Reserve area</th>
+                <th>Unavailable</th>
                 <th>Used</th>
                 <th>Flight</th>
                 <th>Timestamp</th>
@@ -314,7 +373,7 @@ export default function DailySchedulePage() {
             <tbody>
               {dailyRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9}>No responses for this date.</td>
+                  <td colSpan={10}>No responses for this date.</td>
                 </tr>
               ) : (
                 dailyRows.map((row, index) => (
@@ -325,6 +384,7 @@ export default function DailySchedulePage() {
                     <td>{row.area}</td>
                     <td>{row.reservePeriod}</td>
                     <td>{row.reserveArea}</td>
+                    <td>{row.unavailablePeriods}</td>
                     <td>{resolvedRows.find((resolved) => resolved.timestamp === row.timestamp && resolved.sp === row.sp)?.fallback ?? "not scheduled"}</td>
                     <td>{row.flight}</td>
                     <td>{row.timestamp}</td>
