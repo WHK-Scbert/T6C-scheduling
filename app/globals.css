@@ -9,6 +9,8 @@
   --accent-strong: #0b5b34;
   --blue: #dcebf7;
   --black-period: #eef0f2;
+  --identity-cell: #eef6f1;
+  --identity-header: #dfeee6;
   --warning-soft: #ffe4c7;
   --warning-strong: #b85f00;
   --yellow: #fff4bf;
@@ -416,6 +418,15 @@ code {
   vertical-align: middle;
 }
 
+.dailyScheduleTable th:nth-child(-n + 2),
+.dailyScheduleTable td:nth-child(-n + 2) {
+  background: var(--identity-cell);
+}
+
+.dailyScheduleTable thead th:nth-child(-n + 2) {
+  background: var(--identity-header);
+}
+
 .dailyScheduleTable td.filled strong {
   display: inline;
 }
@@ -471,7 +482,7 @@ td.blackPeriod {
 }
 
 .alertNameCell {
-  background: var(--warning-soft);
+  background: var(--warning-soft) !important;
   color: var(--ink);
 }
 
