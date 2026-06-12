@@ -445,7 +445,9 @@ export default function LeadLagPage() {
                 <td>Per student</td>
                 <td>{formatHours(tableTotals.averageActual)}</td>
                 <td>{formatHours(tableTotals.averagePlanned)}</td>
-                <td>{formatHours(tableTotals.averageDelta)}</td>
+                <td className={tableTotals.averageDelta < 0 ? "negativeDelta" : "positiveDelta"}>
+                  {formatHours(tableTotals.averageDelta)}
+                </td>
                 <td>{groundCountLabel(tableTotals.averageGround)}</td>
                 <td />
               </tr>
