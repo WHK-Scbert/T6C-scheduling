@@ -44,6 +44,7 @@ type StudentLeadLag = {
   name: string;
   flights: StudentFlight[];
   actualHoursByCol: Record<string, number>;
+  entriesByCol: Record<string, string>;
 };
 
 function parseCsv(text: string) {
@@ -122,6 +123,15 @@ function buildActualHoursMap(row: string[], timeline: TimelineItem[]) {
   return map;
 }
 
+function buildEntryMap(row: string[], timeline: TimelineItem[]) {
+  const map: Record<string, string> = {};
+  timeline.forEach((item) => {
+    const value = row[item.col]?.trim() ?? "";
+    if (value) map[item.col] = value;
+  });
+  return map;
+}
+
 function findStudentRows(rows: string[][]) {
   const firstSummaryIndex = rows.findIndex((row) => row[1]?.trim() === "บินจริง");
   const studentGridRows = rows.slice(0, firstSummaryIndex === -1 ? rows.length : firstSummaryIndex).filter(isStudentRow);
@@ -191,6 +201,7 @@ export async function GET() {
       name: gridRow[2]?.trim() ?? "",
       flights,
       actualHoursByCol: actualRow ? buildActualHoursMap(actualRow, timeline) : {},
+      entriesByCol: buildEntryMap(gridRow, timeline),
     };
   });
 

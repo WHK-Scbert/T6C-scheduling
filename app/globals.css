@@ -416,7 +416,7 @@ code {
 
 .leadSummaryGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -672,6 +672,36 @@ td.blackPeriod {
 
 .positiveDelta {
   color: var(--accent-strong) !important;
+}
+
+.groundStatusTable th:nth-child(2),
+.groundStatusTable td:nth-child(2) {
+  background: var(--identity-cell);
+}
+
+.groundStatus {
+  display: inline-grid;
+  min-width: 104px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.groundStatus.hold {
+  background: var(--yellow);
+  color: #725c00;
+}
+
+.groundStatus.abort {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.groundStatus.notscheduled {
+  background: var(--black-period);
+  color: var(--muted);
 }
 
 td.filled strong,

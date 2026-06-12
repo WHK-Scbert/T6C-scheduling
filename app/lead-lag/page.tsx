@@ -27,6 +27,7 @@ type StudentLeadLag = {
   name: string;
   flights: StudentFlight[];
   actualHoursByCol: Record<string, number>;
+  entriesByCol: Record<string, string>;
 };
 
 type LeadLagPayload = {
@@ -37,6 +38,8 @@ type LeadLagPayload = {
 };
 
 type StudentStatus = "lead" | "track" | "lag";
+
+type GroundStatus = "HOLD" | "ABORT" | "Not Scheduled";
 
 function todayYmd() {
   const date = new Date();
@@ -75,6 +78,42 @@ function statusLabel(status: StudentStatus) {
   return "On track";
 }
 
+function isFlyingMission(item: TimelineItem) {
+  const mission = item.mission.trim();
+  return Boolean(mission) && mission !== "0" && item.plannedTime > 0;
+}
+
+function classifyGroundEntry(value: string, selected: TimelineItem) {
+  const trimmed = value.trim();
+  const normalized = trimmed.toUpperCase();
+
+  if (normalized.includes("ABORT")) {
+    return { status: "ABORT" as GroundStatus, reason: trimmed };
+  }
+
+  if (normalized.includes("HOLD")) {
+    return { status: "HOLD" as GroundStatus, reason: trimmed };
+  }
+
+  if (
+    normalized.includes("NOT SCHEDULED") ||
+    normalized.includes("NOT SCHED") ||
+    normalized === "NS" ||
+    normalized === "N/S"
+  ) {
+    return { status: "Not Scheduled" as GroundStatus, reason: trimmed };
+  }
+
+  if (!trimmed && isFlyingMission(selected)) {
+    return {
+      status: "Not Scheduled" as GroundStatus,
+      reason: `No entry for ${selected.mission} on ${selected.date || selected.displayDate}`,
+    };
+  }
+
+  return null;
+}
+
 export default function LeadLagPage() {
   const [payload, setPayload] = useState<LeadLagPayload | null>(null);
   const [selectedCol, setSelectedCol] = useState<number | null>(null);
@@ -91,8 +130,9 @@ export default function LeadLagPage() {
       setStatus(`Loaded ${data.students.length} student${data.students.length === 1 ? "" : "s"}`);
 
       const today = todayYmd();
-      const nextDate = data.timeline.find((item) => item.date >= today && item.date);
-      const fallback = data.timeline.find((item) => item.date) ?? data.timeline[0];
+      const flightItems = data.timeline.filter(isFlyingMission);
+      const nextDate = flightItems.find((item) => item.date >= today && item.date);
+      const fallback = flightItems.find((item) => item.date) ?? flightItems[0] ?? data.timeline[0];
       setSelectedCol((current) => current ?? nextDate?.col ?? fallback?.col ?? null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to load lead/lag sheet");
@@ -104,10 +144,11 @@ export default function LeadLagPage() {
   }, []);
 
   const timeline = payload?.timeline ?? [];
+  const flightTimeline = useMemo(() => timeline.filter(isFlyingMission), [timeline]);
   const students = payload?.students ?? [];
   const selected = useMemo(
-    () => timeline.find((item) => item.col === selectedCol) ?? timeline[0],
-    [timeline, selectedCol],
+    () => flightTimeline.find((item) => item.col === selectedCol) ?? flightTimeline[0] ?? timeline[0],
+    [flightTimeline, timeline, selectedCol],
   );
   const studentRows = useMemo(() => {
     if (!selected) return [];
@@ -140,12 +181,41 @@ export default function LeadLagPage() {
       { lead: 0, track: 0, lag: 0 },
     );
   }, [studentRows]);
+  const remainingPlan = useMemo(() => {
+    if (!selected) return { hours: 0, flyingDays: 0 };
+
+    const futureItems = flightTimeline.filter((item) => item.col > selected.col);
+    const lastPlannedHours = Math.max(...timeline.map((item) => item.plannedHours), selected.plannedHours);
+
+    return {
+      hours: Math.max(0, lastPlannedHours - selected.plannedHours),
+      flyingDays: futureItems.length,
+    };
+  }, [flightTimeline, selected, timeline]);
+  const groundRows = useMemo(() => {
+    if (!selected) return [];
+
+    return students
+      .map((student) => {
+        const entry = student.entriesByCol[String(selected.col)] ?? "";
+        const classified = classifyGroundEntry(entry, selected);
+        if (!classified) return null;
+
+        return {
+          rank: student.rank,
+          name: student.name,
+          entry,
+          ...classified,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  }, [selected, students]);
   const visibleTimeline = useMemo(() => {
-    if (!selected) return timeline.slice(0, 8);
-    const index = timeline.findIndex((item) => item.col === selected.col);
+    if (!selected) return flightTimeline.slice(0, 8);
+    const index = flightTimeline.findIndex((item) => item.col === selected.col);
     const start = Math.max(0, index - 3);
-    return timeline.slice(start, start + 8);
-  }, [timeline, selected]);
+    return flightTimeline.slice(start, start + 8);
+  }, [flightTimeline, selected]);
 
   return (
     <main className="shell leadLagShell">
@@ -171,7 +241,7 @@ export default function LeadLagPage() {
             value={selected?.col ?? ""}
             onChange={(event) => setSelectedCol(Number(event.target.value))}
           >
-            {timeline.map((item) => (
+            {flightTimeline.map((item) => (
               <option key={item.col} value={item.col}>
                 {item.date || item.displayDate} - {item.mission || "No mission"}
               </option>
@@ -187,6 +257,11 @@ export default function LeadLagPage() {
       </section>
 
       <section className="leadSummaryGrid" aria-label="Lead lag summary">
+        <div className="leadSummaryCard">
+          <span>Remaining</span>
+          <strong>{formatHours(remainingPlan.hours)} hr</strong>
+          <small>{remainingPlan.flyingDays} flying day{remainingPlan.flyingDays === 1 ? "" : "s"} left</small>
+        </div>
         <div className="leadSummaryCard">
           <span>Selected plan</span>
           <strong>{selected?.date || "-"}</strong>
@@ -214,7 +289,7 @@ export default function LeadLagPage() {
       <section className="panel wide">
         <div className="panelHeader">
           <h2>Course Timeline</h2>
-          <span>{timeline.length} plan columns</span>
+          <span>{flightTimeline.length} flying blocks</span>
         </div>
         <div className="timelineStrip">
           {visibleTimeline.map((item) => (
@@ -278,6 +353,45 @@ export default function LeadLagPage() {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel wide">
+        <div className="panelHeader">
+          <h2>HOLD / ABORT / Not Scheduled</h2>
+          <span>{selected?.date || "No date"} / {groundRows.length} row{groundRows.length === 1 ? "" : "s"}</span>
+        </div>
+        <div className="daySchedule">
+          <table className="groundStatusTable">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Student</th>
+                <th>Status</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groundRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>No HOLD, ABORT, or Not Scheduled rows for this selected plan date.</td>
+                </tr>
+              ) : (
+                groundRows.map((row) => (
+                  <tr key={`${row.rank}-${row.name}-${row.status}`}>
+                    <td>{row.rank}</td>
+                    <th>{row.name}</th>
+                    <td>
+                      <span className={`groundStatus ${row.status.replace(/\s+/g, "").toLowerCase()}`}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td>{row.reason}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
