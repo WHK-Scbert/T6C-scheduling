@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type ResponseRow = {
@@ -485,6 +486,9 @@ export default function DailySchedulePage() {
           <h1 id="daily-title">Daily Flight Schedule</h1>
         </div>
         <div className="topActions">
+          <Link className="navButton" href="/lead-lag">
+            Lead / Lag
+          </Link>
           <button className="primaryButton compactButton" type="button" onClick={loadResponses}>
             Refresh
           </button>

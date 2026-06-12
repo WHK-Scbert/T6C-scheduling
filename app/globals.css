@@ -340,7 +340,23 @@ code {
   margin-bottom: 16px;
 }
 
+.leadLagControls {
+  display: grid;
+  grid-template-columns: minmax(280px, 460px) 1fr;
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
 .dailyControls label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.leadLagControls label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -396,6 +412,75 @@ code {
 .capacityBadge span {
   color: var(--accent-strong);
   font-weight: 800;
+}
+
+.leadSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.leadSummaryCard {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.leadSummaryCard span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.leadSummaryCard strong {
+  color: var(--ink);
+  font-size: 26px;
+}
+
+.leadSummaryCard small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.timelineStrip {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(120px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.timelineItem {
+  display: grid;
+  min-height: 92px;
+  align-content: space-between;
+  gap: 7px;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: left;
+}
+
+.timelineItem span,
+.timelineItem small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.timelineItem strong {
+  color: var(--ink);
+  font-size: 17px;
+}
+
+.timelineItem.active {
+  border-color: var(--accent);
+  background: #eef6f1;
+  box-shadow: inset 0 0 0 2px rgba(23, 114, 69, 0.12);
 }
 
 .overCapacity {
@@ -539,6 +624,56 @@ td.blackPeriod {
   color: var(--accent-strong);
 }
 
+.leadLagTable th:nth-child(2),
+.leadLagTable td:nth-child(2) {
+  background: var(--identity-cell);
+}
+
+.leadLagTable td strong {
+  display: block;
+  color: var(--ink);
+}
+
+.leadLagTable td span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.leadStatus {
+  display: inline-grid !important;
+  min-width: 78px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.leadStatus.lag {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.leadStatus.track {
+  background: #eef6f1;
+  color: var(--accent-strong);
+}
+
+.leadStatus.lead {
+  background: var(--blue);
+  color: #17517a;
+}
+
+.negativeDelta {
+  color: var(--danger) !important;
+}
+
+.positiveDelta {
+  color: var(--accent-strong) !important;
+}
+
 td.filled strong,
 td.filled span {
   display: block;
@@ -573,10 +708,16 @@ td.filled span {
 
   .topActions,
   .dailyControls,
+  .leadLagControls,
+  .leadSummaryGrid,
   .capacityStrip {
     align-items: stretch;
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+
+  .timelineStrip {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
   }
 
   .ipRow,
