@@ -252,6 +252,19 @@ function parseManualOverrides(text: string, date: string): ResponseRow[] {
     .filter((row) => row.sp && row.ip && row.period && row.area);
 }
 
+function responseRowKey(row: ResponseRow) {
+  return [
+    row.manualOverride ? "manual" : "sheet",
+    row.date,
+    row.sp,
+    row.ip,
+    row.period,
+    row.area,
+    row.flight,
+    row.timestamp,
+  ].join("|");
+}
+
 function seededOrder<T>(items: T[], seedSource: string) {
   let seed = seedSource.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
   const ordered = [...items];
@@ -372,6 +385,7 @@ export default function DailySchedulePage() {
   const [status, setStatus] = useState("Loading responses...");
   const [aircraftCapacity, setAircraftCapacity] = useState(emptyAircraftCapacity);
   const [manualOverrideText, setManualOverrideText] = useState("");
+  const [excludedRowKeys, setExcludedRowKeys] = useState<Set<string>>(() => new Set());
 
   async function loadResponses() {
     setStatus("Loading responses...");
@@ -408,12 +422,16 @@ export default function DailySchedulePage() {
     const manualSps = new Set(manualRows.map((row) => row.sp));
     return [...dailyRows.filter((row) => !manualSps.has(row.sp)), ...manualRows];
   }, [dailyRows, manualRows]);
+  const activeScheduleRows = useMemo(
+    () => scheduleRows.filter((row) => !excludedRowKeys.has(responseRowKey(row))),
+    [scheduleRows, excludedRowKeys],
+  );
   const resolvedRows = useMemo(
-    () => resolveDailyFlights(scheduleRows, aircraftCapacity),
-    [scheduleRows, aircraftCapacity],
+    () => resolveDailyFlights(activeScheduleRows, aircraftCapacity),
+    [activeScheduleRows, aircraftCapacity],
   );
   const dailyScheduleRows = useMemo(() => {
-    const responseSps = scheduleRows.map((row) => row.sp).filter(Boolean);
+    const responseSps = activeScheduleRows.map((row) => row.sp).filter(Boolean);
     const allSps = Array.from(new Set([...SP_LIST, ...responseSps]));
 
     return allSps.map((sp) => {
@@ -434,7 +452,7 @@ export default function DailySchedulePage() {
         status: cannot ? "cannot" : spRows.length === 0 ? "hold" : "scheduled",
       };
     });
-  }, [scheduleRows, resolvedRows]);
+  }, [activeScheduleRows, resolvedRows]);
   const capacitySummary = useMemo(() => {
     return PERIODS.map((period) => {
       const used = resolvedRows.filter((row) => row.scheduledPeriod === period).length;
@@ -446,6 +464,18 @@ export default function DailySchedulePage() {
       };
     });
   }, [resolvedRows, aircraftCapacity]);
+
+  function toggleExcludedRow(key: string) {
+    setExcludedRowKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
 
   return (
     <main className="shell">
@@ -527,7 +557,7 @@ export default function DailySchedulePage() {
         <div className="panelHeader">
           <h2>Daily Schedule Output</h2>
           <span>
-            {resolvedRows.length} scheduled / {scheduleRows.length} inputs
+            {resolvedRows.length} scheduled / {activeScheduleRows.length} active
           </span>
         </div>
         <div className="daySchedule">
@@ -596,29 +626,44 @@ export default function DailySchedulePage() {
                 <th>Used</th>
                 <th>Flight</th>
                 <th>Timestamp</th>
+                <th aria-label="Toggle response"></th>
               </tr>
             </thead>
             <tbody>
               {scheduleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11}>No responses for this date.</td>
+                  <td colSpan={12}>No responses for this date.</td>
                 </tr>
               ) : (
-                scheduleRows.map((row, index) => (
-                  <tr key={`${row.timestamp}-${index}`}>
-                    <td>{row.period}</td>
-                    <td>{row.sp}</td>
-                    <td>{row.ip}</td>
-                    <td>{row.area}</td>
-                    <td>{row.reservePeriod}</td>
-                    <td>{row.reserveArea}</td>
-                    <td>{row.unavailablePeriods}</td>
-                    <td>{row.checkFlight}</td>
-                    <td>{resolvedRows.find((resolved) => resolved.timestamp === row.timestamp && resolved.sp === row.sp)?.fallback ?? "not scheduled"}</td>
-                    <td>{row.flight}</td>
-                    <td>{row.timestamp}</td>
-                  </tr>
-                ))
+                scheduleRows.map((row, index) => {
+                  const key = responseRowKey(row);
+                  const isExcluded = excludedRowKeys.has(key);
+                  return (
+                    <tr className={isExcluded ? "responseExcluded" : ""} key={`${row.timestamp}-${index}`}>
+                      <td>{row.period}</td>
+                      <td>{row.sp}</td>
+                      <td>{row.ip}</td>
+                      <td>{row.area}</td>
+                      <td>{row.reservePeriod}</td>
+                      <td>{row.reserveArea}</td>
+                      <td>{row.unavailablePeriods}</td>
+                      <td>{row.checkFlight}</td>
+                      <td>{isExcluded ? "excluded" : resolvedRows.find((resolved) => resolved.timestamp === row.timestamp && resolved.sp === row.sp)?.fallback ?? "not scheduled"}</td>
+                      <td>{row.flight}</td>
+                      <td>{row.timestamp}</td>
+                      <td className="toggleCell">
+                        <button
+                          aria-label={isExcluded ? `Restore ${row.sp} response` : `Exclude ${row.sp} response`}
+                          className={isExcluded ? "rowToggleButton restore" : "rowToggleButton"}
+                          onClick={() => toggleExcludedRow(key)}
+                          type="button"
+                        >
+                          x
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

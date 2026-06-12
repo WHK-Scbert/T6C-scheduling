@@ -504,6 +504,41 @@ td.blackPeriod {
   color: #725c00;
 }
 
+.responseExcluded td:not(.toggleCell) {
+  color: #9a8f86;
+  opacity: 0.68;
+  text-decoration: line-through;
+}
+
+.toggleCell {
+  min-width: 52px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.rowToggleButton {
+  display: inline-grid;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  place-items: center;
+  border-color: #f0b7b2;
+  border-radius: 999px;
+  background: #fff1f0;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0;
+}
+
+.rowToggleButton.restore {
+  border-color: var(--line);
+  background: #eef3f0;
+  color: var(--accent-strong);
+}
+
 td.filled strong,
 td.filled span {
   display: block;
