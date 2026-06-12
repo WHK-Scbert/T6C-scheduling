@@ -14,6 +14,8 @@ type ResponseRow = {
   flight: string;
   unavailablePeriods: string;
   checkFlight: string;
+  manualPriority?: number;
+  manualOverride?: boolean;
 };
 
 type ResponsesPayload = {
@@ -186,6 +188,10 @@ function checkFlightPriority(value: string) {
   return value.trim() === "ใช่" ? 0 : 1;
 }
 
+function manualPriority(row: ResponseRow) {
+  return row.manualPriority ?? Number.MAX_SAFE_INTEGER;
+}
+
 function flightPriority(flight: string) {
   const normalized = flight.trim().toUpperCase();
   const index = FLIGHT_PRIORITY.indexOf(normalized);
@@ -212,6 +218,37 @@ function periodUnavailableSet(value: string) {
   return new Set(splitPeriodList(value));
 }
 
+function normalizePeriod(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  return PERIODS.find((period) => period.toLowerCase() === normalized) ?? value.trim();
+}
+
+function parseManualOverrides(text: string, date: string): ResponseRow[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [sp = "", ip = "", period = "", area = ""] = line.split(/\t|,/).map((item) => item.trim());
+      return {
+        timestamp: `Manual override ${index + 1}`,
+        date,
+        sp,
+        ip,
+        period: normalizePeriod(period),
+        reservePeriod: "",
+        area,
+        reserveArea: "",
+        flight: "Manual",
+        unavailablePeriods: "",
+        checkFlight: "",
+        manualPriority: index,
+        manualOverride: true,
+      };
+    })
+    .filter((row) => row.sp && row.ip && row.period && row.area);
+}
+
 function seededOrder<T>(items: T[], seedSource: string) {
   let seed = seedSource.split("").reduce((total, char) => total + char.charCodeAt(0), 0);
   const ordered = [...items];
@@ -230,6 +267,8 @@ function seededPeriodOrder(row: ResponseRow) {
 }
 
 function areaCandidates(row: ResponseRow, period: string) {
+  if (row.manualOverride) return [row.area];
+
   const preferredAreas = [row.area, row.reserveArea].map((area) => area.trim()).filter(Boolean);
   if (preferredAreas.some((area) => area.toUpperCase() === SIM_AREA)) return [SIM_AREA];
 
@@ -241,6 +280,10 @@ function areaCandidates(row: ResponseRow, period: string) {
 }
 
 function periodCandidates(row: ResponseRow, unavailablePeriods: Set<string>) {
+  if (row.manualOverride) {
+    return [{ period: row.period, fallback: "primary" as const }];
+  }
+
   const preferredPeriods = [row.period, row.reservePeriod].filter((period) => PERIODS.includes(period));
   const randomPeriods = seededPeriodOrder(row).filter(
     (period) => !preferredPeriods.includes(period) && !unavailablePeriods.has(period),
@@ -290,6 +333,7 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
     .map((row, index) => ({ row, index }))
     .sort(
       (a, b) =>
+        manualPriority(a.row) - manualPriority(b.row) ||
         checkFlightPriority(a.row.checkFlight) - checkFlightPriority(b.row.checkFlight) ||
         flightPriority(a.row.flight) - flightPriority(b.row.flight) ||
         ipPriority(a.row.ip) - ipPriority(b.row.ip) ||
@@ -324,6 +368,7 @@ export default function DailySchedulePage() {
   const [updatedAt, setUpdatedAt] = useState("");
   const [status, setStatus] = useState("Loading responses...");
   const [aircraftCapacity, setAircraftCapacity] = useState(emptyAircraftCapacity);
+  const [manualOverrideText, setManualOverrideText] = useState("");
 
   async function loadResponses() {
     setStatus("Loading responses...");
@@ -352,12 +397,17 @@ export default function DailySchedulePage() {
 
   const dates = useMemo(() => availableScheduleDates(rows), [rows]);
   const dailyRows = useMemo(() => rows.filter((row) => row.date === selectedDate), [rows, selectedDate]);
+  const manualRows = useMemo(
+    () => parseManualOverrides(manualOverrideText, selectedDate),
+    [manualOverrideText, selectedDate],
+  );
+  const scheduleRows = useMemo(() => [...dailyRows, ...manualRows], [dailyRows, manualRows]);
   const resolvedRows = useMemo(
-    () => resolveDailyFlights(dailyRows, aircraftCapacity),
-    [dailyRows, aircraftCapacity],
+    () => resolveDailyFlights(scheduleRows, aircraftCapacity),
+    [scheduleRows, aircraftCapacity],
   );
   const dailyScheduleRows = useMemo(() => {
-    const responseSps = dailyRows.map((row) => row.sp).filter(Boolean);
+    const responseSps = scheduleRows.map((row) => row.sp).filter(Boolean);
     const allSps = Array.from(new Set([...SP_LIST, ...responseSps]));
 
     return allSps.map((sp) => {
@@ -378,7 +428,7 @@ export default function DailySchedulePage() {
         status: cannot ? "cannot" : spRows.length === 0 ? "hold" : "scheduled",
       };
     });
-  }, [dailyRows, resolvedRows]);
+  }, [scheduleRows, resolvedRows]);
   const capacitySummary = useMemo(() => {
     return PERIODS.map((period) => {
       const used = resolvedRows.filter((row) => row.scheduledPeriod === period).length;
@@ -423,6 +473,22 @@ export default function DailySchedulePage() {
         </div>
       </section>
 
+      <section className="panel wide priorityOverride">
+        <div className="panelHeader">
+          <h2>Priority Override</h2>
+          <span>{manualRows.length} manual row{manualRows.length === 1 ? "" : "s"}</span>
+        </div>
+        <label className="fieldBlock">
+          Manual flights
+          <textarea
+            value={manualOverrideText}
+            onChange={(event) => setManualOverrideText(event.target.value)}
+            placeholder={"SP, IP, Period, Area\nC-NON, K-YA, 1 Blue, Cn"}
+            rows={4}
+          />
+        </label>
+      </section>
+
       <section className="capacityStrip" aria-label="Aircraft capacity summary">
         {capacitySummary.map((item) => (
           <div className={item.over ? "capacityBadge overCapacity" : "capacityBadge"} key={item.period}>
@@ -455,7 +521,7 @@ export default function DailySchedulePage() {
         <div className="panelHeader">
           <h2>Daily Schedule Output</h2>
           <span>
-            {resolvedRows.length} scheduled / {dailyRows.length} responses
+            {resolvedRows.length} scheduled / {scheduleRows.length} inputs
           </span>
         </div>
         <div className="daySchedule">
@@ -507,7 +573,7 @@ export default function DailySchedulePage() {
       <section className="panel wide">
         <div className="panelHeader">
           <h2>Response Rows</h2>
-          <span>{dailyRows.length} for {selectedDate}</span>
+          <span>{scheduleRows.length} for {selectedDate}</span>
         </div>
         <div className="daySchedule">
           <table>
@@ -527,12 +593,12 @@ export default function DailySchedulePage() {
               </tr>
             </thead>
             <tbody>
-              {dailyRows.length === 0 ? (
+              {scheduleRows.length === 0 ? (
                 <tr>
                   <td colSpan={11}>No responses for this date.</td>
                 </tr>
               ) : (
-                dailyRows.map((row, index) => (
+                scheduleRows.map((row, index) => (
                   <tr key={`${row.timestamp}-${index}`}>
                     <td>{row.period}</td>
                     <td>{row.sp}</td>
