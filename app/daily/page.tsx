@@ -401,7 +401,10 @@ export default function DailySchedulePage() {
     () => parseManualOverrides(manualOverrideText, selectedDate),
     [manualOverrideText, selectedDate],
   );
-  const scheduleRows = useMemo(() => [...dailyRows, ...manualRows], [dailyRows, manualRows]);
+  const scheduleRows = useMemo(() => {
+    const manualSps = new Set(manualRows.map((row) => row.sp));
+    return [...dailyRows.filter((row) => !manualSps.has(row.sp)), ...manualRows];
+  }, [dailyRows, manualRows]);
   const resolvedRows = useMemo(
     () => resolveDailyFlights(scheduleRows, aircraftCapacity),
     [scheduleRows, aircraftCapacity],
