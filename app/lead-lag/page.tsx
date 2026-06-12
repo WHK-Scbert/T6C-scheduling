@@ -83,15 +83,15 @@ function isFlyingMission(item: TimelineItem) {
   return Boolean(mission) && mission !== "0" && item.plannedTime > 0;
 }
 
-function classifyGroundEntry(value: string, selected: TimelineItem) {
+function classifyGroundEntry(value: string) {
   const trimmed = value.trim();
   const normalized = trimmed.toUpperCase();
 
-  if (normalized.includes("ABORT")) {
+  if (normalized.includes("ABORT") || trimmed.includes("ยกเลิก")) {
     return { status: "ABORT" as GroundStatus, reason: trimmed };
   }
 
-  if (normalized.includes("HOLD")) {
+  if (normalized.includes("HOLD") || trimmed.includes("งด") || trimmed.includes("พัก")) {
     return { status: "HOLD" as GroundStatus, reason: trimmed };
   }
 
@@ -99,19 +99,34 @@ function classifyGroundEntry(value: string, selected: TimelineItem) {
     normalized.includes("NOT SCHEDULED") ||
     normalized.includes("NOT SCHED") ||
     normalized === "NS" ||
-    normalized === "N/S"
+    normalized === "N/S" ||
+    trimmed.includes("ไม่ได้จัด") ||
+    trimmed.includes("ไม่จัด")
   ) {
     return { status: "Not Scheduled" as GroundStatus, reason: trimmed };
   }
 
-  if (!trimmed && isFlyingMission(selected)) {
-    return {
-      status: "Not Scheduled" as GroundStatus,
-      reason: `No entry for ${selected.mission} on ${selected.date || selected.displayDate}`,
-    };
-  }
-
   return null;
+}
+
+function emptyGroundCounts() {
+  return { hold: 0, abort: 0, notScheduled: 0 };
+}
+
+function accumulatedGroundCounts(student: StudentLeadLag, selected: TimelineItem, timeline: TimelineItem[]) {
+  return timeline
+    .filter((item) => item.col <= selected.col)
+    .reduce((counts, item) => {
+      const classified = classifyGroundEntry(student.entriesByCol[String(item.col)] ?? "");
+      if (classified?.status === "HOLD") counts.hold += 1;
+      if (classified?.status === "ABORT") counts.abort += 1;
+      if (classified?.status === "Not Scheduled") counts.notScheduled += 1;
+      return counts;
+    }, emptyGroundCounts());
+}
+
+function groundCountLabel(counts: ReturnType<typeof emptyGroundCounts>) {
+  return `H ${counts.hold} / A ${counts.abort} / NS ${counts.notScheduled}`;
 }
 
 export default function LeadLagPage() {
@@ -159,6 +174,7 @@ export default function LeadLagPage() {
         const plannedHours = selected.plannedHours;
         const delta = actualHours - plannedHours;
         const lastFlight = lastFlightAt(student, selected);
+        const groundCounts = accumulatedGroundCounts(student, selected, timeline);
 
         return {
           ...student,
@@ -166,6 +182,7 @@ export default function LeadLagPage() {
           plannedHours,
           delta,
           lastFlight,
+          groundCounts,
           status: statusFor(delta),
         };
       })
@@ -198,18 +215,19 @@ export default function LeadLagPage() {
     return students
       .map((student) => {
         const entry = student.entriesByCol[String(selected.col)] ?? "";
-        const classified = classifyGroundEntry(entry, selected);
+        const classified = classifyGroundEntry(entry);
         if (!classified) return null;
 
         return {
           rank: student.rank,
           name: student.name,
           entry,
+          groundCounts: accumulatedGroundCounts(student, selected, timeline),
           ...classified,
         };
       })
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
-  }, [selected, students]);
+  }, [selected, students, timeline]);
   const visibleTimeline = useMemo(() => {
     if (!selected) return flightTimeline.slice(0, 8);
     const index = flightTimeline.findIndex((item) => item.col === selected.col);
@@ -322,6 +340,7 @@ export default function LeadLagPage() {
                 <th>Actual</th>
                 <th>Plan</th>
                 <th>Lead / Lag</th>
+                <th>Ground total</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -348,6 +367,7 @@ export default function LeadLagPage() {
                       {formatHours(row.delta)}
                     </strong>
                   </td>
+                  <td>{groundCountLabel(row.groundCounts)}</td>
                   <td>
                     <span className={`leadStatus ${row.status}`}>{statusLabel(row.status)}</span>
                   </td>
@@ -371,12 +391,13 @@ export default function LeadLagPage() {
                 <th>Student</th>
                 <th>Status</th>
                 <th>Reason</th>
+                <th>Accumulated</th>
               </tr>
             </thead>
             <tbody>
               {groundRows.length === 0 ? (
                 <tr>
-                  <td colSpan={4}>No HOLD, ABORT, or Not Scheduled rows for this selected plan date.</td>
+                  <td colSpan={5}>No HOLD, ABORT, or Not Scheduled rows for this selected plan date.</td>
                 </tr>
               ) : (
                 groundRows.map((row) => (
@@ -389,6 +410,7 @@ export default function LeadLagPage() {
                       </span>
                     </td>
                     <td>{row.reason}</td>
+                    <td>{groundCountLabel(row.groundCounts)}</td>
                   </tr>
                 ))
               )}
