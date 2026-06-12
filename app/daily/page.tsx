@@ -35,7 +35,7 @@ const PERIODS = ["1 Blue", "1 Black", "2 Blue", "2 Black", "3 Blue", "3 Black"];
 const AREAS = ["Cn", "Cs", "Bn", "Bs", "En", "Es", "W"];
 const SIM_AREA = "SIM";
 const SIM_LIMIT_PER_PERIOD = 2;
-const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PAS-KORN"];
+const SP_LIST = ["C-NON", "S-YU", "K-CHAN", "P-PAT", "TH-WIT", "P-POOM", "P-LOT", "PA-KORN"];
 const IP_PRIORITY = [
   "N-WAT",
   "K-YA",
