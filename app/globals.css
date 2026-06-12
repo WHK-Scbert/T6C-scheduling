@@ -702,6 +702,11 @@ td.blackPeriod {
   font-weight: 900;
 }
 
+.inlineGroundStatus {
+  display: inline-grid !important;
+  margin-top: 8px;
+}
+
 .groundStatus.hold {
   background: var(--yellow);
   color: #725c00;

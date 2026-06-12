@@ -152,6 +152,10 @@ function groundCountLabel(counts: ReturnType<typeof emptyGroundCounts>) {
   return `H ${formatCount(counts.hold)} / A ${formatCount(counts.abort)} / NS ${formatCount(counts.notScheduled)}`;
 }
 
+function groundStatusClass(status: GroundStatus) {
+  return status.replace(/\s+/g, "").toLowerCase();
+}
+
 function addGroundCounts(items: Array<ReturnType<typeof emptyGroundCounts>>) {
   return items.reduce(
     (totals, item) => ({
@@ -218,6 +222,7 @@ export default function LeadLagPage() {
         const plannedHours = selected.plannedHours;
         const delta = actualHours - plannedHours;
         const scheduledFlight = student.flights.find((flight) => flight.col === selected.col);
+        const selectedGroundStatus = classifyGroundEntry(student.entriesByCol[String(selected.col)] ?? "");
         const groundCounts = accumulatedGroundCounts(student, selected, timeline);
 
         return {
@@ -226,6 +231,7 @@ export default function LeadLagPage() {
           plannedHours,
           delta,
           scheduledFlight,
+          selectedGroundStatus,
           groundCounts,
           status: statusFor(delta),
         };
@@ -309,8 +315,13 @@ export default function LeadLagPage() {
   }, [courseTimeline, selected]);
   const dailyScheduledTotal = useMemo(() => {
     if (!selected) return 0;
-    return students.filter((student) => student.flights.some((flight) => flight.col === selected.col)).length;
-  }, [selected, students]);
+    return studentRows.filter(
+      (row) =>
+        row.scheduledFlight ||
+        row.selectedGroundStatus?.status === "HOLD" ||
+        row.selectedGroundStatus?.status === "ABORT",
+    ).length;
+  }, [selected, studentRows]);
 
   return (
     <main className="shell leadLagShell">
@@ -435,6 +446,11 @@ export default function LeadLagPage() {
                     ) : (
                       "Not scheduled"
                     )}
+                    {row.selectedGroundStatus?.status === "HOLD" || row.selectedGroundStatus?.status === "ABORT" ? (
+                      <span className={`groundStatus inlineGroundStatus ${groundStatusClass(row.selectedGroundStatus.status)}`}>
+                        {row.selectedGroundStatus.status}
+                      </span>
+                    ) : null}
                   </td>
                   <td>{formatHours(row.actualHours)}</td>
                   <td>{formatHours(row.plannedHours)}</td>
@@ -502,7 +518,7 @@ export default function LeadLagPage() {
                   <tr key={`${row.rank}-${row.name}-${row.status}`}>
                     <th>{row.name}</th>
                     <td>
-                      <span className={`groundStatus ${row.status.replace(/\s+/g, "").toLowerCase()}`}>
+                      <span className={`groundStatus ${groundStatusClass(row.status)}`}>
                         {row.status}
                       </span>
                     </td>
