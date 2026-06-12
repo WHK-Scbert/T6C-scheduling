@@ -4,6 +4,8 @@ export const dynamic = "force-dynamic";
 
 const LEAD_LAG_CSV_URL =
   "https://docs.google.com/spreadsheets/d/1x4Jr9LOMnyAjSTsFd12JhDct_iy7kTtMmUu7T5ii7ec/export?format=csv&gid=91127733";
+const GROUND_STATUS_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/1x4Jr9LOMnyAjSTsFd12JhDct_iy7kTtMmUu7T5ii7ec/export?format=csv&gid=1854883465";
 
 const THAI_MONTHS: Record<string, string> = {
   "ม.ค.": "01",
@@ -46,6 +48,8 @@ type StudentLeadLag = {
   actualHoursByCol: Record<string, number>;
   entriesByCol: Record<string, string>;
 };
+
+type GroundStatusKind = "HOLD" | "ABORT" | "Not Scheduled";
 
 function parseCsv(text: string) {
   const rows: string[][] = [];
@@ -132,6 +136,62 @@ function buildEntryMap(row: string[], timeline: TimelineItem[]) {
   return map;
 }
 
+function timelineKey(date: string, mission: string) {
+  return `${date}|${mission.trim().toUpperCase()}`;
+}
+
+function groundStatusKind(value: string): GroundStatusKind | null {
+  const normalized = value.trim().toUpperCase();
+  if (normalized === "HOLD") return "HOLD";
+  if (normalized === "ABORT") return "ABORT";
+  if (normalized === "ไม่จัดบิน" || normalized === "NOT SCHEDULED") return "Not Scheduled";
+  return null;
+}
+
+function buildGroundStatusMaps(rows: string[][], timeline: TimelineItem[]) {
+  const leadColByKey = new Map(timeline.map((item) => [timelineKey(item.date, item.mission), item.col]));
+  const dayRow = rows[2] ?? [];
+  const monthRow = rows[3] ?? [];
+  const missionRow = rows[4] ?? [];
+  const groundColToLeadCol = new Map<number, number>();
+
+  for (let col = 4; col < missionRow.length; col += 1) {
+    const date = parseThaiDate(dayRow[col] ?? "", monthRow[col] ?? "");
+    const mission = missionRow[col]?.trim() ?? "";
+    const leadCol = leadColByKey.get(timelineKey(date, mission));
+    if (leadCol !== undefined) groundColToLeadCol.set(col, leadCol);
+  }
+
+  const mapsByRank = new Map<string, Record<string, string>>();
+
+  for (let rowIndex = 7; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex] ?? [];
+    const rank = row[1]?.trim() ?? "";
+    const name = row[2]?.trim() ?? "";
+    if (!/^\d+$/.test(rank) || !name || name === "#REF!") continue;
+
+    const entries: Record<string, string> = {};
+
+    for (let offset = 0; offset < 3; offset += 1) {
+      const statusRow = rows[rowIndex + offset] ?? [];
+      const status = groundStatusKind(statusRow[3] ?? "");
+      if (!status) continue;
+
+      groundColToLeadCol.forEach((leadCol, groundCol) => {
+        const reason = statusRow[groundCol]?.trim() ?? "";
+        if (reason) entries[leadCol] = `${status}: ${reason}`;
+      });
+    }
+
+    mapsByRank.set(rank, {
+      ...(mapsByRank.get(rank) ?? {}),
+      ...entries,
+    });
+  }
+
+  return mapsByRank;
+}
+
 function findStudentRows(rows: string[][]) {
   const firstSummaryIndex = rows.findIndex((row) => row[1]?.trim() === "บินจริง");
   const studentGridRows = rows.slice(0, firstSummaryIndex === -1 ? rows.length : firstSummaryIndex).filter(isStudentRow);
@@ -145,7 +205,10 @@ function findStudentRows(rows: string[][]) {
 }
 
 export async function GET() {
-  const response = await fetch(LEAD_LAG_CSV_URL, { cache: "no-store" });
+  const [response, groundResponse] = await Promise.all([
+    fetch(LEAD_LAG_CSV_URL, { cache: "no-store" }),
+    fetch(GROUND_STATUS_CSV_URL, { cache: "no-store" }),
+  ]);
 
   if (!response.ok) {
     return NextResponse.json(
@@ -154,8 +217,17 @@ export async function GET() {
     );
   }
 
+  if (!groundResponse.ok) {
+    return NextResponse.json(
+      { error: `Unable to fetch HOLD/ABORT sheet: ${groundResponse.status}` },
+      { status: 502 },
+    );
+  }
+
   const csv = await response.text();
+  const groundCsv = await groundResponse.text();
   const rows = parseCsv(csv);
+  const groundRows = parseCsv(groundCsv);
   const refRow = rows[1] ?? [];
   const flightDayRow = rows[2] ?? [];
   const dayRow = rows[3] ?? [];
@@ -185,6 +257,8 @@ export async function GET() {
     });
   }
 
+  const groundEntriesByRank = buildGroundStatusMaps(groundRows, timeline);
+
   const students: StudentLeadLag[] = findStudentRows(rows).map(({ gridRow, actualRow }) => {
     const flights = timeline
       .filter((item) => shouldCountFlight(gridRow[item.col] ?? ""))
@@ -201,7 +275,10 @@ export async function GET() {
       name: gridRow[2]?.trim() ?? "",
       flights,
       actualHoursByCol: actualRow ? buildActualHoursMap(actualRow, timeline) : {},
-      entriesByCol: buildEntryMap(gridRow, timeline),
+      entriesByCol: {
+        ...buildEntryMap(gridRow, timeline),
+        ...(groundEntriesByRank.get(gridRow[1]?.trim() ?? "") ?? {}),
+      },
     };
   });
 

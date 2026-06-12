@@ -86,13 +86,15 @@ function isFlyingMission(item: TimelineItem) {
 function classifyGroundEntry(value: string) {
   const trimmed = value.trim();
   const normalized = trimmed.toUpperCase();
+  const prefixed = trimmed.match(/^(HOLD|ABORT|Not Scheduled):\s*(.+)$/i);
+  const reason = prefixed?.[2]?.trim() || trimmed;
 
   if (normalized.includes("ABORT") || trimmed.includes("ยกเลิก")) {
-    return { status: "ABORT" as GroundStatus, reason: trimmed };
+    return { status: "ABORT" as GroundStatus, reason };
   }
 
   if (normalized.includes("HOLD") || trimmed.includes("งด") || trimmed.includes("พัก")) {
-    return { status: "HOLD" as GroundStatus, reason: trimmed };
+    return { status: "HOLD" as GroundStatus, reason };
   }
 
   if (
@@ -103,7 +105,7 @@ function classifyGroundEntry(value: string) {
     trimmed.includes("ไม่ได้จัด") ||
     trimmed.includes("ไม่จัด")
   ) {
-    return { status: "Not Scheduled" as GroundStatus, reason: trimmed };
+    return { status: "Not Scheduled" as GroundStatus, reason };
   }
 
   return null;
