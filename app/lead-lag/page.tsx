@@ -41,6 +41,9 @@ type StudentStatus = "lead" | "track" | "lag";
 
 type GroundStatus = "HOLD" | "ABORT" | "Not Scheduled";
 
+const TOTAL_SORTIES = 712;
+const TOTAL_FLYING_DAYS = 115;
+
 function todayYmd() {
   const date = new Date();
   const year = date.getFullYear();
@@ -54,8 +57,13 @@ function formatHours(value: number) {
 }
 
 function actualHoursAt(student: StudentLeadLag, selected: TimelineItem) {
-  const recorded = student.actualHoursByCol[String(selected.col)];
-  if (typeof recorded === "number") return recorded;
+  const actualEntries = Object.entries(student.actualHoursByCol)
+    .map(([col, hours]) => ({ col: Number(col), hours }))
+    .filter((entry) => Number.isFinite(entry.col) && entry.col <= selected.col);
+
+  if (actualEntries.length > 0) {
+    return actualEntries.reduce((total, entry) => total + entry.hours, 0);
+  }
 
   return student.flights
     .filter((flight) => flight.col <= selected.col)
@@ -78,9 +86,9 @@ function statusLabel(status: StudentStatus) {
   return "On track";
 }
 
-function isFlyingMission(item: TimelineItem) {
+function isCourseBlock(item: TimelineItem) {
   const mission = item.mission.trim();
-  return Boolean(mission) && mission !== "0" && item.plannedTime > 0;
+  return Boolean(mission) && mission !== "0";
 }
 
 function classifyGroundEntry(value: string) {
@@ -128,7 +136,29 @@ function accumulatedGroundCounts(student: StudentLeadLag, selected: TimelineItem
 }
 
 function groundCountLabel(counts: ReturnType<typeof emptyGroundCounts>) {
-  return `H ${counts.hold} / A ${counts.abort} / NS ${counts.notScheduled}`;
+  const formatCount = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1));
+  return `H ${formatCount(counts.hold)} / A ${formatCount(counts.abort)} / NS ${formatCount(counts.notScheduled)}`;
+}
+
+function addGroundCounts(items: Array<ReturnType<typeof emptyGroundCounts>>) {
+  return items.reduce(
+    (totals, item) => ({
+      hold: totals.hold + item.hold,
+      abort: totals.abort + item.abort,
+      notScheduled: totals.notScheduled + item.notScheduled,
+    }),
+    emptyGroundCounts(),
+  );
+}
+
+function actualSortiesAt(student: StudentLeadLag, selected: TimelineItem) {
+  const actualEntries = Object.keys(student.actualHoursByCol)
+    .map(Number)
+    .filter((col) => Number.isFinite(col) && col <= selected.col);
+
+  if (actualEntries.length > 0) return actualEntries.length;
+
+  return student.flights.filter((flight) => flight.col <= selected.col).length;
 }
 
 export default function LeadLagPage() {
@@ -147,9 +177,9 @@ export default function LeadLagPage() {
       setStatus(`Loaded ${data.students.length} student${data.students.length === 1 ? "" : "s"}`);
 
       const today = todayYmd();
-      const flightItems = data.timeline.filter(isFlyingMission);
-      const nextDate = flightItems.find((item) => item.date >= today && item.date);
-      const fallback = flightItems.find((item) => item.date) ?? flightItems[0] ?? data.timeline[0];
+      const courseItems = data.timeline.filter(isCourseBlock);
+      const nextDate = courseItems.find((item) => item.date >= today && item.date);
+      const fallback = courseItems.find((item) => item.date) ?? courseItems[0] ?? data.timeline[0];
       setSelectedCol((current) => current ?? nextDate?.col ?? fallback?.col ?? null);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to load lead/lag sheet");
@@ -161,11 +191,11 @@ export default function LeadLagPage() {
   }, []);
 
   const timeline = payload?.timeline ?? [];
-  const flightTimeline = useMemo(() => timeline.filter(isFlyingMission), [timeline]);
+  const courseTimeline = useMemo(() => timeline.filter(isCourseBlock), [timeline]);
   const students = payload?.students ?? [];
   const selected = useMemo(
-    () => flightTimeline.find((item) => item.col === selectedCol) ?? flightTimeline[0] ?? timeline[0],
-    [flightTimeline, timeline, selectedCol],
+    () => courseTimeline.find((item) => item.col === selectedCol) ?? courseTimeline[0] ?? timeline[0],
+    [courseTimeline, timeline, selectedCol],
   );
   const studentRows = useMemo(() => {
     if (!selected) return [];
@@ -190,27 +220,53 @@ export default function LeadLagPage() {
       })
       .sort((a, b) => a.delta - b.delta || Number(a.rank) - Number(b.rank));
   }, [students, selected]);
-  const summary = useMemo(() => {
-    return studentRows.reduce(
-      (totals, row) => ({
-        lead: totals.lead + (row.status === "lead" ? 1 : 0),
-        track: totals.track + (row.status === "track" ? 1 : 0),
-        lag: totals.lag + (row.status === "lag" ? 1 : 0),
-      }),
-      { lead: 0, track: 0, lag: 0 },
-    );
-  }, [studentRows]);
   const remainingPlan = useMemo(() => {
     if (!selected) return { hours: 0, flyingDays: 0 };
 
-    const futureItems = flightTimeline.filter((item) => item.col > selected.col);
+    const futureItems = courseTimeline.filter((item) => item.col > selected.col);
     const lastPlannedHours = Math.max(...timeline.map((item) => item.plannedHours), selected.plannedHours);
 
     return {
       hours: Math.max(0, lastPlannedHours - selected.plannedHours),
       flyingDays: futureItems.length,
     };
-  }, [flightTimeline, selected, timeline]);
+  }, [courseTimeline, selected, timeline]);
+  const operationsSummary = useMemo(() => {
+    if (!selected) return { sortiesLeft: TOTAL_SORTIES, flyingDaysLeft: TOTAL_FLYING_DAYS, flightsNeededPerDay: 0 };
+
+    const sortiesFlown = students.reduce((total, student) => total + actualSortiesAt(student, selected), 0);
+    const daysSoFar = courseTimeline.filter((item) => item.col <= selected.col).length;
+    const sortiesLeft = Math.max(0, TOTAL_SORTIES - sortiesFlown);
+    const flyingDaysLeft = Math.max(0, TOTAL_FLYING_DAYS - daysSoFar);
+
+    return {
+      sortiesLeft,
+      flyingDaysLeft,
+      flightsNeededPerDay: flyingDaysLeft > 0 ? sortiesLeft / flyingDaysLeft : 0,
+    };
+  }, [courseTimeline, selected, students]);
+  const tableTotals = useMemo(() => {
+    const totalGround = addGroundCounts(studentRows.map((row) => row.groundCounts));
+    const totalActual = studentRows.reduce((total, row) => total + row.actualHours, 0);
+    const totalPlanned = studentRows.reduce((total, row) => total + row.plannedHours, 0);
+    const totalDelta = studentRows.reduce((total, row) => total + row.delta, 0);
+    const count = Math.max(1, studentRows.length);
+
+    return {
+      totalGround,
+      totalActual,
+      totalPlanned,
+      totalDelta,
+      averageGround: {
+        hold: totalGround.hold / count,
+        abort: totalGround.abort / count,
+        notScheduled: totalGround.notScheduled / count,
+      },
+      averageActual: totalActual / count,
+      averagePlanned: totalPlanned / count,
+      averageDelta: totalDelta / count,
+    };
+  }, [studentRows]);
   const groundRows = useMemo(() => {
     if (!selected) return [];
 
@@ -231,11 +287,11 @@ export default function LeadLagPage() {
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
   }, [selected, students, timeline]);
   const visibleTimeline = useMemo(() => {
-    if (!selected) return flightTimeline.slice(0, 8);
-    const index = flightTimeline.findIndex((item) => item.col === selected.col);
+    if (!selected) return courseTimeline.slice(0, 8);
+    const index = courseTimeline.findIndex((item) => item.col === selected.col);
     const start = Math.max(0, index - 3);
-    return flightTimeline.slice(start, start + 8);
-  }, [flightTimeline, selected]);
+    return courseTimeline.slice(start, start + 8);
+  }, [courseTimeline, selected]);
 
   return (
     <main className="shell leadLagShell">
@@ -261,7 +317,7 @@ export default function LeadLagPage() {
             value={selected?.col ?? ""}
             onChange={(event) => setSelectedCol(Number(event.target.value))}
           >
-            {flightTimeline.map((item) => (
+            {courseTimeline.map((item) => (
               <option key={item.col} value={item.col}>
                 {item.date || item.displayDate} - {item.mission || "No mission"}
               </option>
@@ -278,11 +334,6 @@ export default function LeadLagPage() {
 
       <section className="leadSummaryGrid" aria-label="Lead lag summary">
         <div className="leadSummaryCard">
-          <span>Remaining</span>
-          <strong>{formatHours(remainingPlan.hours)} hr</strong>
-          <small>{remainingPlan.flyingDays} flying day{remainingPlan.flyingDays === 1 ? "" : "s"} left</small>
-        </div>
-        <div className="leadSummaryCard">
           <span>Selected plan</span>
           <strong>{selected?.date || "-"}</strong>
           <small>
@@ -290,26 +341,31 @@ export default function LeadLagPage() {
           </small>
         </div>
         <div className="leadSummaryCard">
-          <span>Behind</span>
-          <strong>{summary.lag}</strong>
-          <small>Needs catch-up attention</small>
+          <span>Remaining</span>
+          <strong>{formatHours(remainingPlan.hours)} hr</strong>
+          <small>Total planned hours left</small>
         </div>
         <div className="leadSummaryCard">
-          <span>On track</span>
-          <strong>{summary.track}</strong>
-          <small>Within 1.0 hour</small>
+          <span>Sorties left</span>
+          <strong>{operationsSummary.sortiesLeft}</strong>
+          <small>{TOTAL_SORTIES} total sorties</small>
         </div>
         <div className="leadSummaryCard">
-          <span>Ahead</span>
-          <strong>{summary.lead}</strong>
-          <small>At least 1.0 hour ahead</small>
+          <span>Flying days</span>
+          <strong>{operationsSummary.flyingDaysLeft}</strong>
+          <small>{TOTAL_FLYING_DAYS} planned non-0 mission days</small>
+        </div>
+        <div className="leadSummaryCard">
+          <span>Flights / day</span>
+          <strong>{operationsSummary.flightsNeededPerDay.toFixed(1)}</strong>
+          <small>Needed from today forward</small>
         </div>
       </section>
 
       <section className="panel wide">
         <div className="panelHeader">
           <h2>Course Timeline</h2>
-          <span>{flightTimeline.length} flying blocks</span>
+          <span>{courseTimeline.length} course blocks</span>
         </div>
         <div className="timelineStrip">
           {visibleTimeline.map((item) => (
@@ -336,7 +392,6 @@ export default function LeadLagPage() {
           <table className="leadLagTable">
             <thead>
               <tr>
-                <th>Rank</th>
                 <th>Student</th>
                 <th>Last flight</th>
                 <th>Actual</th>
@@ -349,7 +404,6 @@ export default function LeadLagPage() {
             <tbody>
               {studentRows.map((row) => (
                 <tr key={`${row.rank}-${row.name}`}>
-                  <td>{row.rank}</td>
                   <th>{row.name}</th>
                   <td>
                     {row.lastFlight ? (
@@ -376,6 +430,26 @@ export default function LeadLagPage() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <td>{studentRows.length} students</td>
+                <td>{formatHours(tableTotals.totalActual)}</td>
+                <td>{formatHours(tableTotals.totalPlanned)}</td>
+                <td>{formatHours(tableTotals.totalDelta)}</td>
+                <td>{groundCountLabel(tableTotals.totalGround)}</td>
+                <td />
+              </tr>
+              <tr>
+                <th>Average</th>
+                <td>Per student</td>
+                <td>{formatHours(tableTotals.averageActual)}</td>
+                <td>{formatHours(tableTotals.averagePlanned)}</td>
+                <td>{formatHours(tableTotals.averageDelta)}</td>
+                <td>{groundCountLabel(tableTotals.averageGround)}</td>
+                <td />
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
@@ -389,7 +463,6 @@ export default function LeadLagPage() {
           <table className="groundStatusTable">
             <thead>
               <tr>
-                <th>Rank</th>
                 <th>Student</th>
                 <th>Status</th>
                 <th>Reason</th>
@@ -399,12 +472,11 @@ export default function LeadLagPage() {
             <tbody>
               {groundRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>No HOLD, ABORT, or Not Scheduled rows for this selected plan date.</td>
+                  <td colSpan={4}>No HOLD, ABORT, or Not Scheduled rows for this selected plan date.</td>
                 </tr>
               ) : (
                 groundRows.map((row) => (
                   <tr key={`${row.rank}-${row.name}-${row.status}`}>
-                    <td>{row.rank}</td>
                     <th>{row.name}</th>
                     <td>
                       <span className={`groundStatus ${row.status.replace(/\s+/g, "").toLowerCase()}`}>

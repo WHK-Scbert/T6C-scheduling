@@ -416,7 +416,7 @@ code {
 
 .leadSummaryGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -624,8 +624,8 @@ td.blackPeriod {
   color: var(--accent-strong);
 }
 
-.leadLagTable th:nth-child(2),
-.leadLagTable td:nth-child(2) {
+.leadLagTable th:nth-child(1),
+.leadLagTable td:nth-child(1) {
   background: var(--identity-cell);
 }
 
@@ -674,8 +674,21 @@ td.blackPeriod {
   color: var(--accent-strong) !important;
 }
 
-.groundStatusTable th:nth-child(2),
-.groundStatusTable td:nth-child(2) {
+.leadLagTable tfoot th,
+.leadLagTable tfoot td {
+  height: auto;
+  background: #fbfcfb;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.leadLagTable tfoot tr:first-child th,
+.leadLagTable tfoot tr:first-child td {
+  border-top: 2px solid var(--accent);
+}
+
+.groundStatusTable th:nth-child(1),
+.groundStatusTable td:nth-child(1) {
   background: var(--identity-cell);
 }
 
