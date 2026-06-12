@@ -42,7 +42,9 @@ type StudentStatus = "lead" | "track" | "lag";
 type GroundStatus = "HOLD" | "ABORT" | "Not Scheduled";
 
 const TOTAL_SORTIES = 712;
-const TOTAL_FLYING_DAYS = 115;
+const TOTAL_COURSE_DAYS = 115;
+const TOTAL_FLYING_DAYS = 89;
+const TOTAL_SPARE_DAYS = 26;
 
 function todayYmd() {
   const date = new Date();
@@ -89,6 +91,16 @@ function statusLabel(status: StudentStatus) {
 function isCourseBlock(item: TimelineItem) {
   const mission = item.mission.trim();
   return Boolean(mission) && mission !== "0";
+}
+
+function isFlyingDayBlock(item: TimelineItem) {
+  const mission = item.mission.trim().toUpperCase();
+  return isCourseBlock(item) && !mission.startsWith("BR");
+}
+
+function isSpareBlock(item: TimelineItem) {
+  const mission = item.mission.trim().toUpperCase();
+  return mission.startsWith("BR") || mission.startsWith("SP");
 }
 
 function classifyGroundEntry(value: string) {
@@ -205,7 +217,7 @@ export default function LeadLagPage() {
         const actualHours = actualHoursAt(student, selected);
         const plannedHours = selected.plannedHours;
         const delta = actualHours - plannedHours;
-        const lastFlight = lastFlightAt(student, selected);
+        const scheduledFlight = student.flights.find((flight) => flight.col === selected.col);
         const groundCounts = accumulatedGroundCounts(student, selected, timeline);
 
         return {
@@ -213,35 +225,38 @@ export default function LeadLagPage() {
           actualHours,
           plannedHours,
           delta,
-          lastFlight,
+          scheduledFlight,
           groundCounts,
           status: statusFor(delta),
         };
       })
       .sort((a, b) => a.delta - b.delta || Number(a.rank) - Number(b.rank));
   }, [students, selected]);
-  const remainingPlan = useMemo(() => {
-    if (!selected) return { hours: 0, flyingDays: 0 };
-
-    const futureItems = courseTimeline.filter((item) => item.col > selected.col);
-    const lastPlannedHours = Math.max(...timeline.map((item) => item.plannedHours), selected.plannedHours);
-
-    return {
-      hours: Math.max(0, lastPlannedHours - selected.plannedHours),
-      flyingDays: futureItems.length,
-    };
-  }, [courseTimeline, selected, timeline]);
   const operationsSummary = useMemo(() => {
-    if (!selected) return { sortiesLeft: TOTAL_SORTIES, flyingDaysLeft: TOTAL_FLYING_DAYS, flightsNeededPerDay: 0 };
+    if (!selected) {
+      return {
+        sortiesLeft: TOTAL_SORTIES,
+        courseDaysLeft: TOTAL_COURSE_DAYS,
+        flyingDaysLeft: TOTAL_FLYING_DAYS,
+        spareLeft: TOTAL_SPARE_DAYS,
+        flightsNeededPerDay: 0,
+      };
+    }
 
     const sortiesFlown = students.reduce((total, student) => total + actualSortiesAt(student, selected), 0);
-    const daysSoFar = courseTimeline.filter((item) => item.col <= selected.col).length;
+    const courseDaysSoFar = courseTimeline.filter((item) => item.col <= selected.col).length;
+    const flyingDaysSoFar = courseTimeline.filter((item) => item.col <= selected.col && isFlyingDayBlock(item)).length;
+    const spareDaysSoFar = courseTimeline.filter((item) => item.col <= selected.col && isSpareBlock(item)).length;
     const sortiesLeft = Math.max(0, TOTAL_SORTIES - sortiesFlown);
-    const flyingDaysLeft = Math.max(0, TOTAL_FLYING_DAYS - daysSoFar);
+    const courseDaysLeft = Math.max(0, TOTAL_COURSE_DAYS - courseDaysSoFar);
+    const flyingDaysLeft = Math.max(0, TOTAL_FLYING_DAYS - flyingDaysSoFar);
+    const spareLeft = Math.max(0, TOTAL_SPARE_DAYS - spareDaysSoFar);
 
     return {
       sortiesLeft,
+      courseDaysLeft,
       flyingDaysLeft,
+      spareLeft,
       flightsNeededPerDay: flyingDaysLeft > 0 ? sortiesLeft / flyingDaysLeft : 0,
     };
   }, [courseTimeline, selected, students]);
@@ -292,6 +307,10 @@ export default function LeadLagPage() {
     const start = Math.max(0, index - 3);
     return courseTimeline.slice(start, start + 8);
   }, [courseTimeline, selected]);
+  const dailyScheduledTotal = useMemo(() => {
+    if (!selected) return 0;
+    return students.filter((student) => student.flights.some((flight) => flight.col === selected.col)).length;
+  }, [selected, students]);
 
   return (
     <main className="shell leadLagShell">
@@ -334,26 +353,28 @@ export default function LeadLagPage() {
 
       <section className="leadSummaryGrid" aria-label="Lead lag summary">
         <div className="leadSummaryCard">
-          <span>Selected plan</span>
+          <span>Date</span>
           <strong>{selected?.date || "-"}</strong>
           <small>
             {selected?.mission || "No mission"} / {formatHours(selected?.plannedHours ?? 0)} planned hours
           </small>
         </div>
         <div className="leadSummaryCard">
-          <span>Remaining</span>
-          <strong>{formatHours(remainingPlan.hours)} hr</strong>
-          <small>Total planned hours left</small>
+          <span>Flying days</span>
+          <strong>
+            {operationsSummary.courseDaysLeft} / {operationsSummary.flyingDaysLeft}
+          </strong>
+          <small>Non-0 days / non-BR days</small>
+        </div>
+        <div className="leadSummaryCard">
+          <span>Spare left</span>
+          <strong>{operationsSummary.spareLeft}</strong>
+          <small>{TOTAL_SPARE_DAYS} BR/SP blocks</small>
         </div>
         <div className="leadSummaryCard">
           <span>Sorties left</span>
           <strong>{operationsSummary.sortiesLeft}</strong>
           <small>{TOTAL_SORTIES} total sorties</small>
-        </div>
-        <div className="leadSummaryCard">
-          <span>Flying days</span>
-          <strong>{operationsSummary.flyingDaysLeft}</strong>
-          <small>{TOTAL_FLYING_DAYS} planned non-0 mission days</small>
         </div>
         <div className="leadSummaryCard">
           <span>Flights / day</span>
@@ -386,14 +407,14 @@ export default function LeadLagPage() {
       <section className="panel wide">
         <div className="panelHeader">
           <h2>Student Lead / Lag</h2>
-          <span>Sorted by most behind first</span>
+          <span>Daily scheduled total: {dailyScheduledTotal}</span>
         </div>
         <div className="daySchedule">
           <table className="leadLagTable">
             <thead>
               <tr>
                 <th>Student</th>
-                <th>Last flight</th>
+                <th>Scheduled flight</th>
                 <th>Actual</th>
                 <th>Plan</th>
                 <th>Lead / Lag</th>
@@ -406,13 +427,13 @@ export default function LeadLagPage() {
                 <tr key={`${row.rank}-${row.name}`}>
                   <th>{row.name}</th>
                   <td>
-                    {row.lastFlight ? (
+                    {row.scheduledFlight ? (
                       <>
-                        <strong>{row.lastFlight.value}</strong>
-                        <span>{row.lastFlight.date || "No date"}</span>
+                        <strong>{row.scheduledFlight.value}</strong>
+                        <span>{row.scheduledFlight.date || "No date"}</span>
                       </>
                     ) : (
-                      "No flight"
+                      "Not scheduled"
                     )}
                   </td>
                   <td>{formatHours(row.actualHours)}</td>
