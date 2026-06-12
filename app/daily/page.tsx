@@ -229,7 +229,10 @@ function parseManualOverrides(text: string, date: string): ResponseRow[] {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line, index) => {
-      const [sp = "", ip = "", period = "", area = ""] = line.split(/\t|,/).map((item) => item.trim());
+      const [sp = "", ip = "", period = "", flightOrArea = "", areaValue = ""] = line
+        .split(/\t|,/)
+        .map((item) => item.trim());
+      const hasFlightNumber = Boolean(areaValue);
       return {
         timestamp: `Manual override ${index + 1}`,
         date,
@@ -237,9 +240,9 @@ function parseManualOverrides(text: string, date: string): ResponseRow[] {
         ip,
         period: normalizePeriod(period),
         reservePeriod: "",
-        area,
+        area: hasFlightNumber ? areaValue : flightOrArea,
         reserveArea: "",
-        flight: "Manual",
+        flight: hasFlightNumber ? flightOrArea : "Manual",
         unavailablePeriods: "",
         checkFlight: "",
         manualPriority: index,
@@ -486,7 +489,7 @@ export default function DailySchedulePage() {
           <textarea
             value={manualOverrideText}
             onChange={(event) => setManualOverrideText(event.target.value)}
-            placeholder={"SP, IP, Period, Area\nC-NON, K-YA, 1 Blue, Cn"}
+            placeholder={"SP, IP, Period, Flight, Area\nC-NON, K-YA, 1 Blue, C101, Cn"}
             rows={4}
           />
         </label>
