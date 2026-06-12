@@ -51,6 +51,111 @@ const IP_PRIORITY_ALIASES: Record<string, string> = {
   "TH-KRIT": "T-KRIT",
   "P-BOB": "P-POB",
 };
+const FLIGHT_PRIORITY = [
+  "C101",
+  "C102",
+  "C103",
+  "C104",
+  "C105",
+  "C106",
+  "C107",
+  "C108",
+  "C109",
+  "C110",
+  "C111",
+  "C110A",
+  "C110B",
+  "I101",
+  "I102",
+  "I103",
+  "I104",
+  "I105",
+  "I106",
+  "I107",
+  "I108",
+  "I108A",
+  "C201",
+  "C202",
+  "C203",
+  "C204",
+  "C205",
+  "C206",
+  "C207",
+  "C208",
+  "C209",
+  "C210",
+  "C211",
+  "C212",
+  "C213",
+  "C213A",
+  "C213B",
+  "I201",
+  "I202",
+  "I203",
+  "I204",
+  "I205",
+  "I206",
+  "I207",
+  "I207A",
+  "I207B",
+  "NAV101",
+  "NAV102",
+  "NAV103",
+  "NAV104",
+  "NAV105",
+  "NAV106",
+  "NAV107",
+  "NAV108",
+  "NAV109",
+  "NAV110",
+  "NAV111",
+  "NAV112",
+  "NAV113",
+  "NAV114",
+  "NAV115",
+  "NAV116",
+  "NAV117",
+  "NAV118",
+  "NAV119",
+  "NAV120",
+  "NAV121",
+  "NAV122",
+  "NAV123",
+  "NAV124",
+  "NAV121A",
+  "NAV122A",
+  "NAV121B",
+  "NAV122B",
+  "F101",
+  "F102",
+  "F103",
+  "F104",
+  "F105",
+  "F106",
+  "F107",
+  "F108",
+  "F109",
+  "F110",
+  "F111",
+  "F112",
+  "F113",
+  "F114",
+  "F115",
+  "F116",
+  "F116A",
+  "T101",
+  "T102",
+  "T103",
+  "T104",
+  "T105",
+  "T106",
+  "T106A",
+  "T106B",
+  "NC101",
+  "NN102",
+  "NN103",
+  "NN104",
+];
 
 function todayYmd() {
   const date = new Date();
@@ -79,6 +184,12 @@ function ipPriority(ip: string) {
 
 function checkFlightPriority(value: string) {
   return value.trim() === "ใช่" ? 0 : 1;
+}
+
+function flightPriority(flight: string) {
+  const normalized = flight.trim().toUpperCase();
+  const index = FLIGHT_PRIORITY.indexOf(normalized);
+  return index === -1 ? FLIGHT_PRIORITY.length : index;
 }
 
 function timestampMs(value: string) {
@@ -180,6 +291,7 @@ function resolveDailyFlights(rows: ResponseRow[], aircraftCapacity: Record<strin
     .sort(
       (a, b) =>
         checkFlightPriority(a.row.checkFlight) - checkFlightPriority(b.row.checkFlight) ||
+        flightPriority(a.row.flight) - flightPriority(b.row.flight) ||
         ipPriority(a.row.ip) - ipPriority(b.row.ip) ||
         timestampMs(a.row.timestamp) - timestampMs(b.row.timestamp) ||
         a.index - b.index,
