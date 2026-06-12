@@ -443,7 +443,7 @@ export default function LeadLagPage() {
                         <strong>{row.scheduledFlight.value}</strong>
                         <span>{row.scheduledFlight.date || "No date"}</span>
                       </>
-                    ) : (
+                    ) : row.selectedGroundStatus?.status === "HOLD" || row.selectedGroundStatus?.status === "ABORT" ? null : (
                       "Not scheduled"
                     )}
                     {row.selectedGroundStatus?.status === "HOLD" || row.selectedGroundStatus?.status === "ABORT" ? (
